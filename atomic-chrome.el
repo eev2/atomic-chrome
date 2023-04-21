@@ -80,7 +80,7 @@
 
 (defcustom atomic-chrome-enable-auto-update t
   "If non-nil, edit on Emacs is reflected to the browser instantly.
-If nil, you need to type \"C-cC-s\" manually."
+If nil, you need to call \\[atomic-chrome-send-buffer-text] manually."
   :type 'boolean
   :group 'atomic-chrome)
 
@@ -111,6 +111,12 @@ corresponding major modes."
 (defcustom atomic-chrome-edit-done-hook nil
   "Customizable hook which run when the editing buffer is closed."
   :type 'hook
+  :group 'atomic-chrome)
+
+(defcustom atomic-chrome-delete-temp-file t
+  "If non-nil, upon closing the connection, the temporary file that
+is created is deleted."
+  :type 'boolean
   :group 'atomic-chrome)
 
 (defvar atomic-chrome-server-atomic-chrome nil
@@ -149,29 +155,40 @@ Looks in `atomic-chrome-buffer-table'."
 
 (defun atomic-chrome-close-connection ()
   "Close client connection associated with current buffer."
+  (if (buffer-base-buffer)
+      (set-buffer (buffer-base-buffer)))
   (let ((socket (atomic-chrome-get-websocket (current-buffer)))
         (filenm (atomic-chrome-get-file (current-buffer))))
     (when socket
       (remhash (current-buffer) atomic-chrome-buffer-table)
-      (if filenm (delete-file filenm))
+      (if (and atomic-chrome-delete-temp-file filenm)
+          (delete-file filenm))
       (websocket-close socket))))
 
 (defun atomic-chrome-send-buffer-text ()
   "Send request to update text with current buffer content."
   (interactive)
-  (let ((socket (atomic-chrome-get-websocket (current-buffer)))
-        (text (buffer-substring-no-properties (point-min) (point-max))))
-    (when (and socket text)
-      (websocket-send-text
-       socket
-       (json-encode
-        (if (eq (websocket-server-conn socket) atomic-chrome-server-ghost-text)
-            (list (cons "text" text))
-          (list '("type" . "updateText")
-                (cons "payload" (list (cons "text" text))))))))
-    (if buffer-file-name
-        (save-buffer))
-    (set-buffer-modified-p nil)))
+  (if (buffer-base-buffer)
+      (set-buffer (buffer-base-buffer)))
+  (let ((socket (atomic-chrome-get-websocket (current-buffer))))
+    (if socket
+        (let ((text (buffer-substring-no-properties 1 (1+ (buffer-size)))))
+          (when text
+            (websocket-send-text
+             socket
+             (json-encode
+              (if (eq (websocket-server-conn socket) atomic-chrome-server-ghost-text)
+                  (list (cons "text" text))
+                (list '("type" . "updateText")
+                      (cons "payload" (list (cons "text" text)))))))
+            (if (and buffer-file-name
+                     (buffer-modified-p))
+                (let ((make-backup-files nil)
+                      (save-silently atomic-chrome-enable-auto-update))
+                  (while-no-input
+                    (redisplay)
+                    (basic-save-buffer-2)))
+              (set-buffer-modified-p nil)))))))
 
 (defun atomic-chrome-set-major-mode (url)
   "Set major mode for editing buffer depending on URL.
