@@ -133,6 +133,11 @@ Looks in `atomic-chrome-buffer-table'."
 Looks in `atomic-chrome-buffer-table'."
   (nth 1 (gethash buffer atomic-chrome-buffer-table)))
 
+(defun atomic-chrome-get-file (buffer)
+  "Look up file associated with buffer BUFFER.
+Looks in `atomic-chrome-buffer-table'."
+  (nth 2 (gethash buffer atomic-chrome-buffer-table)))
+
 (defun atomic-chrome-get-buffer-by-socket (socket)
   "Look up buffer which is associated to the websocket SOCKET.
 Looks in `atomic-chrome-buffer-table'."
@@ -144,9 +149,11 @@ Looks in `atomic-chrome-buffer-table'."
 
 (defun atomic-chrome-close-connection ()
   "Close client connection associated with current buffer."
-  (let ((socket (atomic-chrome-get-websocket (current-buffer))))
+  (let ((socket (atomic-chrome-get-websocket (current-buffer)))
+        (filenm (atomic-chrome-get-file (current-buffer))))
     (when socket
       (remhash (current-buffer) atomic-chrome-buffer-table)
+      (if filenm (delete-file filenm))
       (websocket-close socket))))
 
 (defun atomic-chrome-send-buffer-text ()
@@ -162,6 +169,8 @@ Looks in `atomic-chrome-buffer-table'."
             (list (cons "text" text))
           (list '("type" . "updateText")
                 (cons "payload" (list (cons "text" text))))))))
+    (if buffer-file-name
+        (save-buffer))
     (set-buffer-modified-p nil)))
 
 (defun atomic-chrome-set-major-mode (url)
@@ -208,13 +217,14 @@ frame, depending on `atomic-chrome-buffer-open-style'."
   "Create buffer associated with websocket specified by SOCKET.
 URL is used to determine the major mode of the buffer created,
 TITLE is used for the buffer name and TEXT is inserted to the buffer."
-  (let ((buffer (generate-new-buffer (if (string-empty-p title) "No title" title))))
-    (with-current-buffer buffer
-      (puthash buffer
-             (list socket (atomic-chrome-show-edit-buffer buffer title))
+  (let* ((filenm (make-temp-file title nil nil text))
+         (buffer (find-file-literally filenm)))
+    (rename-buffer title t)
+    (puthash buffer
+             (list socket (atomic-chrome-show-edit-buffer buffer title) filenm)
              atomic-chrome-buffer-table)
-      (atomic-chrome-set-major-mode url)
-      (insert text))))
+    (atomic-chrome-set-major-mode url)
+    ))
 
 (defun atomic-chrome-close-edit-buffer (buffer)
   "Close buffer BUFFER if it's one of Atomic Chrome edit buffers."
