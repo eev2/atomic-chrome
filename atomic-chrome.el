@@ -234,14 +234,15 @@ frame, depending on `atomic-chrome-buffer-open-style'."
   "Create buffer associated with websocket specified by SOCKET.
 URL is used to determine the major mode of the buffer created,
 TITLE is used for the buffer name and TEXT is inserted to the buffer."
-  (let* ((filenm (make-temp-file title nil nil text))
+  (let* ((filenm (make-temp-file
+		  (replace-regexp-in-string "[^[:alnum:]]" "_" title)
+		  nil nil text))
          (buffer (find-file-literally filenm)))
     (rename-buffer title t)
     (puthash buffer
              (list socket (atomic-chrome-show-edit-buffer buffer title) filenm)
              atomic-chrome-buffer-table)
-    (atomic-chrome-set-major-mode url)
-    ))
+    (atomic-chrome-set-major-mode url)))
 
 (defun atomic-chrome-close-edit-buffer (buffer)
   "Close buffer BUFFER if it's one of Atomic Chrome edit buffers."
